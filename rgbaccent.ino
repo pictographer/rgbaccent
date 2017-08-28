@@ -110,8 +110,7 @@ void debugBlink(int blinkCount) {
 struct cmdarg_t {
    const char* const name;
    CRGB color1;
-   CRGB color2;                 // unused
-   long duration_ms;            // unused
+   long duration_ms;
 };
 
 // A command is an argument structure and a function.
@@ -123,6 +122,18 @@ public:
 
 // Set all the LEDs to color1.
 void solidColor(struct cmdarg_t a) {
+   if (a.duration_ms) {
+
+      // Fade from the current leds to the new solid color.
+
+      CRGB overlay[NUM_LEDS];
+      fill_solid(overlay, NUM_LEDS, a.color1);
+      for (int i = 0; i < 256; ++i) {
+         nblend(leds, overlay, NUM_LEDS, 4);
+         FastLED.delay(a.duration_ms); // Includes FastLED.show().
+      }
+      Serial.println("Done!");
+   }
    fill_solid(leds, NUM_LEDS, a.color1);
 }
 
@@ -154,10 +165,12 @@ void solidColor(struct cmdarg_t a) {
 // port.
 #define LEDS_ON_USB2 400
 
+const unsigned long fade_ms = 32;
+
 const cmd_t cmds[] = {
 
    // Control-related commands
-   {{"startup", 0, 0, 0},
+   {{"startup", 0, 0},
     [] (cmdarg_t a) {
        // Set the first three LEDS to red, green, and blue respective.
        fill_solid(leds, NUM_LEDS, CRGB::Black);
@@ -165,35 +178,36 @@ const cmd_t cmds[] = {
        leds[1] = CRGB::Green;
        leds[2] = CRGB::Blue;
     }},
-   {{"maxma", 0, 0, 0},
+   {{"maxma", 0, 0},
     [] (cmdarg_t a) {
        FastLED.setMaxPowerInVoltsAndMilliamps(5, LEDS_ON_2A);
     }},
-   {{"usbma", 0, 0, 0},
+   {{"usbma", 0, 0},
     [] (cmdarg_t a) {
        FastLED.setMaxPowerInVoltsAndMilliamps(5, LEDS_ON_USB2);
     }},
 
-   {{"dim",    0, 0, 0}, [] (cmdarg_t a) { FastLED.setBrightness(8); }},
-   {{"bright", 0, 0, 0}, [] (cmdarg_t a) { FastLED.setBrightness(32); }},
-   {{"full",   0, 0, 0}, [] (cmdarg_t a) { FastLED.setBrightness(64); }},
+   {{"dim",    0, 0}, [] (cmdarg_t a) { FastLED.setBrightness(8); }},
+   {{"medium", 0, 0}, [] (cmdarg_t a) { FastLED.setBrightness(24); }},
+   {{"bright", 0, 0}, [] (cmdarg_t a) { FastLED.setBrightness(32); }},
+   {{"full",   0, 0}, [] (cmdarg_t a) { FastLED.setBrightness(48); }},
 
    // Scenes
-   {{"black",  CRGB::Black,     0, 0}, solidColor},
-   {{"white",  CRGB::White,     0, 0}, solidColor},
-   {{"red",    CRGB::Red,       0, 0}, solidColor},
-   {{"orange", CRGB::OrangeRed, 0, 0}, solidColor},
-   {{"yellow", CRGB::Yellow,    0, 0}, solidColor},
-   {{"green",  CRGB::Green,     0, 0}, solidColor},
-   {{"aqua",   CRGB::Aqua,      0, 0}, solidColor},
-   {{"blue",   CRGB::Blue,      0, 0}, solidColor},
-   {{"purple", CRGB::Purple,    0, 0}, solidColor},
-   {{"pink",   CRGB::Pink,      0, 0}, solidColor},
-   {{"rainbow", 0, 0, 0},
+   {{"black",  CRGB::Black,     fade_ms}, solidColor},
+   {{"white",  CRGB::White,     fade_ms}, solidColor},
+   {{"red",    CRGB::Red,       fade_ms}, solidColor},
+   {{"orange", CRGB::OrangeRed, fade_ms}, solidColor},
+   {{"yellow", CRGB::Yellow,    fade_ms}, solidColor},
+   {{"green",  CRGB::Green,     fade_ms}, solidColor},
+   {{"aqua",   CRGB::Aqua,      fade_ms}, solidColor},
+   {{"blue",   CRGB::Blue,      fade_ms}, solidColor},
+   {{"purple", CRGB::Purple,    fade_ms}, solidColor},
+   {{"pink",   CRGB::Pink,      fade_ms}, solidColor},
+   {{"rainbow", 0, 0},
     [] (cmdarg_t a) {
        fill_rainbow(leds, NUM_LEDS, HUE_RED, 1);
     }},
-   {{"alarm", 0, 0, 0}, [] (cmdarg_t) {}}
+   {{"alarm", 0, 0}, [] (cmdarg_t) {}}
 };
 
 const size_t cmd_count = sizeof cmds / sizeof *cmds;
@@ -203,7 +217,8 @@ const size_t cmax = 256;
 
 size_t getCommandNumber(const char* const name) {
    for (size_t i = 0; i < cmd_count; ++i) {
-      if (strncmp(cmds[i].a.name, name, cmax) == 0) {
+// TODO strnlen
+      if (strncmp(cmds[i].a.name, name, strlen(cmds[i].a.name)) == 0) {
          return i;
       }
    }
@@ -282,8 +297,8 @@ void loop() {
       }
    }
    if (cindex) {
-      // TODO: better parser. match command based on first word (upto whitespace or eol).
-      // Remaining text is actual arguments.
+      // TODO: better parser. match command based on first word (upto
+      // whitespace or eol).  Remaining text is actual arguments.
       size_t candidate = getCommandNumber(cmdline);
       if (candidate != (size_t) -1) {
          cmd = candidate;
@@ -316,8 +331,9 @@ void loop() {
       Serial.println("right button YELLOW4");
       ++cmd;
       if (cmd_count <= cmd) cmd = getCommandNumber("white");
-      Serial.printf("Executing command %s (%d)\n", cmds[cmd].a.name, cmd);
-      cmds[cmd].fn(cmds[cmd].a);
+      Serial.printf("Setting color to %s (%d)\n", cmds[cmd].a.name, cmd);
+      // Switch without the fade.
+      fill_solid(leds, NUM_LEDS, cmds[cmd].a.color1);
       debugBlink(2);
    }
 
